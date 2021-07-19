@@ -50,7 +50,7 @@ parser.add_argument('--plotPath', default='./plot/qm9/mpnn/', help='plot path')
 parser.add_argument('--resume', default='./checkpoint/qm9/mpnn/',
                     help='path to latest checkpoint')
 # Optimization Options
-parser.add_argument('--batch-size', type=int, default=100, metavar='N',
+parser.add_argument('--batch-size', type=int, default=20, metavar='N',
                     help='Input batch size for training (default: 20)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='Enables CUDA training')
@@ -219,7 +219,7 @@ def main():
             print("=> no best model found at '{}'".format(best_model_file))
 
     # For testing
-    validate(test_loader, model, criterion, evaluation)
+    validate(valid_loader, model, criterion, evaluation)
 
 
 def train(train_loader, model, criterion, optimizer, epoch, evaluation, logger):
@@ -249,8 +249,8 @@ def train(train_loader, model, criterion, optimizer, epoch, evaluation, logger):
         train_loss = criterion(output, target)
 
         # Logs
-        losses.update(train_loss.data[0], g.size(0))
-        error_ratio.update(evaluation(output, target).data[0], g.size(0))
+        losses.update(train_loss.data.item(), g.size(0))
+        error_ratio.update(evaluation(output, target).data.item(), g.size(0))
 
         # compute gradient and do SGD step
         train_loss.backward()
@@ -297,8 +297,8 @@ def validate(val_loader, model, criterion, evaluation, logger=None):
         output = model(g, h, e)
 
         # Logs
-        losses.update(criterion(output, target).data[0], g.size(0))
-        error_ratio.update(evaluation(output, target).data[0], g.size(0))
+        losses.update(criterion(output, target).data.item(), g.size(0))
+        error_ratio.update(evaluation(output, target).data.item(), g.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)

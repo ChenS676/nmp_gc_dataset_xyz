@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-__author__ = "Pau Riba, Anjan Dutta"
-__email__ = "priba@cvc.uab.cat, adutta@cvc.uab.cat"
+__author__ = "chen shao"
+__email__ = "chen.shao@student.kit.edu"
 
 
 class MPNN(nn.Module):
@@ -86,7 +86,9 @@ class MPNN(nn.Module):
             h_t = self.u[0].forward(h[t], m)
 
             # Delete virtual nodes
-            h_t = (torch.sum(h_in, 2).expand_as(h_t) > 0).type_as(h_t) * h_t
+            # TODO The expanded size of the tensor (73) must match the existing size (33) at non-singleton dimension 2.  Target sizes: [1, 33, 73].  Tensor sizes: [1, 33]
+            # h_t = (torch.sum(h_in, 2).expand_as(h_t) > 0).type_as(h_t) * h_t
+            h_t = (torch.sum(h_in, 2)[...,None].expand_as(h_t) > 0).type_as(h_t) * h_t
             h.append(h_t)
 
         # Readout
