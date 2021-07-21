@@ -19,7 +19,7 @@ import numpy as np
 import shutil
 import os
 import json
-
+from skimage.metrics import structural_similarity as ssim
 __author__ = "chen shao"
 __email__ = "chen.shao@student.kit.edu"
 
@@ -252,3 +252,81 @@ def add_supernode(g):
                     distance=np.linalg.norm(g.nodes[n]['coord']-g.nodes[m]['coord']))
     g.remove_edge(*(supernode_index, supernode_index))
     return g
+
+def save_checkpoint(model, optimizer, epoch, filename, root="./checkpoints"):
+    if not os.path.isdir(root):
+        os.makedirs(root)
+
+    fpath = os.path.join(root, filename)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "epoch": epoch
+        }
+        , fpath)
+
+class RunningAverageDict:
+    def __init__(self):
+        self._dict = None
+
+    def update(self, new_dict):
+        if self._dict is None:
+            self._dict = dict()
+            for key, value in new_dict.items():
+                self._dict[key] = RunningAverage()
+
+        for key, value in new_dict.items():
+            self._dict[key].append(value)
+
+    def get_value(self):
+        return {key: value.get_value() for key, value in self._dict.items()}
+
+class RunningAverage:
+    def __init__(self):
+        self.avg = 0
+        self.count = 0
+
+    def append(self, value):
+        self.avg = (value + self.count * self.avg) / (self.count + 1)
+        self.count += 1
+
+    def get_value(self):
+        return self.avg
+
+def compute_errors(pred, target):
+    # linear version
+    thresh = np.maximum((target / pred), (pred / target))
+    a1 = (thresh < 0.25).mean()
+    a2 = (thresh < 0.25 ** 2).mean()
+    a3 = (thresh < 0.25 ** 3).mean()
+    abs_rel = np.mean(np.abs(target - pred) / target)
+    sq_rel = np.mean(((target - pred) ** 2) / target)
+
+    rmse = (target - pred) ** 2
+    rmse = np.sqrt(rmse.mean())
+
+    # log version
+    thresh_log = np.maximum(np.exp(np.log(target)- np.log(pred)), np.exp(np.log(pred) - np.log(gt)))
+    a1_stable = (thresh_log < 1.25).mean()
+    a2_stable = (thresh_log < 1.25 ** 2).mean()
+    a3_stable = (thresh_log < 1.25 ** 3).mean()
+    
+    abs_rel_stable = np.mean(np.exp(np.log(np.abs(target - pred)) - np.log(target)))
+     
+    rmse_log = (np.log(target) - np.log(pred)) ** 2
+    rmse_log = np.sqrt(rmse_log.mean())
+
+    err = np.log(pred) - np.log(target)
+    silog = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2) * 100
+
+    log_10 = (np.abs(np.log10(gt) - np.log10(pred))).mean()
+    
+    
+    gt_ori = (target - target.min())/(target.max()-target.min())
+    pred_ori = (pred - pred.min())/(pred.max()-pred.min())
+
+    ssim_value = ssim(gt_ori, pred_ori, data_range=1, gaussian_weights=True, sigma=1.5, use_sample_covariance=False)
+
+    return dict(a1=a1, a2=a2, a3=a3, abs_rel=abs_rel, rmse=rmse, log_10=log_10, rmse_log=rmse_log, silog=silog, sq_rel=sq_rel, a1_stable = a1_stable, a2_stable=a2_stable, a3_stable=a3_stable, abs_rel_stable=abs_rel_stable, ssim=ssim_value)
+
