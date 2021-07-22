@@ -24,7 +24,6 @@ import numpy as np
 # Our Modules
 import datasets
 from datasets import utils
-
 from models.MPNN import MPNN
 from LogMetric import AverageMeter, Logger
 from pathlib import Path, PurePath, PurePosixPath
@@ -34,7 +33,7 @@ import wandb
 from datetime import datetime as dt
 import sys
 import argparse
-import tqdm 
+from tqdm import tqdm 
 
 __author__ = "chen shao"
 __email__ = "chen.shao@student.kit.edu"
@@ -45,24 +44,7 @@ global PROJECT
 PROJECT = "MPNN-Displace-Reaction"
 logging = True
 
-def is_rank_zero(args):
-    return args.rank == 0
 
-def log_images(params):
-    raise NotImplementedError
-    wandb.log(
-        {
-            "Input": [wandb.Image(img)],
-            "GT": [wandb.Image(depth)],
-            "Prediction": [wandb.Image(pred)]
-        }, step=step)
-
-# Parser check
-def restricted_float(x, inter):
-    x = float(x)
-    if x < inter[0] or x > inter[1]:
-        raise argparse.ArgumentTypeError("%r not in range [1e-5, 1e-4]"%(x,))
-    return x
 
 global args, best_er1
 PROJECT = "MPNN-Displace-Reaction-Training-Tuning"
@@ -218,18 +200,14 @@ def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001,
     # Train loop
     for epoch in range(args.last_epoch+1, epochs):
         if should_log: wandb.log({"Epoch": epoch}, step=step)
-
-        # for i, (g, h, e, target) in enumerate(train_loader):
-        for i, (g, h, e, target) in tqdm(enumerate(train_loader), desc=f"Epoch: {epoch + 1}/{epochs}. Loop: Train\n",
-                             total=len(train_loader)) if is_rank_zero(args) else enumerate(train_loader):
+        for i, (g, h, e, target) in tqdm(enumerate(train_loader), desc=f"Epoch: {epoch + 1}/{epochs}. Loop: Train\n",\
+                             total=len(train_loader)) if utils.is_rank_zero(
+            args) else enumerate(train_loader):
 
             # Prepare input data
             if args.cuda:
                 g, h, e, target = g.cuda(), h.cuda(), e.cuda(), target.cuda()
             g, h, e, target = Variable(g), Variable(h), Variable(e), Variable(target)
-
-            # Measure data loading time
-            data_time.update(time.time() - end)
 
             optimizer.zero_grad()
 
@@ -239,7 +217,7 @@ def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001,
 
             # Logs
             losses.update(train_loss.data.item(), g.size(0))
-            error_ratio.update(evaluation(output, target).data.item(), g.size(0))
+            error_ratio.update(evaluation(output, target).data, g.size(0))
 
             # compute gradient and do SGD step
             train_loss.backward()
@@ -247,18 +225,14 @@ def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001,
             # nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             optimizer.step()
 
-            # Measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
-
             if should_log and step% 5 == 0:
-                wandb.log({f"Train/{train_loss.name}": train_loss.item()}, step=step)
-                wandb.log({f"Train/{error_ratio.name}": error_ratio.item()}, step=step)
+                wandb.log({f"Train/train_loss": train_loss.item()}, step=step)
+                wandb.log({f"Train/error_ratio": error_ratio.avg.item()}, step=step)
             step += 1
             scheduler.step()
 
             if i % args.log_interval == 0 and i > 0:
-                print('Epoch: [{0}][{1}/{2}]\t'
+                print('\tEpoch: [{0}][{1}/{2}]\t'
                     'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                     'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                     'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
@@ -268,12 +242,13 @@ def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001,
             # validate 
             if should_write and step % args.validate_every == 0:
                 model.eval()
-                metrics, val_si, er1 = validate(valid_loader, model, criterion, evaluation)
-
+                metrics, val_si, er1 = validate( args, model, valid_loader, criterion, evaluation, epoch, epochs)
                 print("Validated: {}".format(metrics))
+
+                # log into wandb
                 if should_log:
                     wandb.log({
-                       f"Validate/{losses.name}": val_si.get_value()}, step=step)
+                       f"Validate/validation_loss": val_si.get_value()}, step=step)
                     wandb.log({f"Metrics/{k}": v for k, v in metrics.items()}, step=step)
 
                     # go into the wandb and file the right file to save the model
@@ -315,10 +290,11 @@ def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001,
 
     return model
 
-def validate(val_loader, model, criterion, evaluation):
+def validate(args, model, val_loader, criterion, evaluation, epoch, epochs, device='cpu'):
     with torch.no_grad():
         val_si = utils.RunningAverage()
         metrics = utils.RunningAverageDict()
+
         batch_time = AverageMeter()
         losses = AverageMeter()
         error_ratio = AverageMeter()
@@ -326,9 +302,7 @@ def validate(val_loader, model, criterion, evaluation):
         # switch to evaluate mode
         model.eval()
 
-        # for i, (g, h, e, target) in enumerate(val_loader):
-        for i, (g, h, e, target) in tqdm(val_loader, desc=f"Epoch: {epoch + 1}/{epochs}. Loop: Validation") if is_rank_zero(
-                args) else val_loader:
+        for i, (g, h, e, target) in tqdm(enumerate(val_loader), desc=f"Epoch: {epoch + 1}/{epochs}. Loop: Validation\n", total=len(val_loader)) if utils.is_rank_zero(args) else enumerate(val_loader):
 
             # Prepare input data
             if args.cuda:
@@ -340,6 +314,7 @@ def validate(val_loader, model, criterion, evaluation):
 
             # Logs
             losses.update(criterion(output, target).data.item(), g.size(0))
+            val_si.append(criterion(output, target).data.item())
             error_ratio.update(evaluation(output, target).data.item(), g.size(0))
 
             if i % args.log_interval == 0 and i > 0:
@@ -350,13 +325,14 @@ def validate(val_loader, model, criterion, evaluation):
                     'Error Ratio {err.val:.4f} ({err.avg:.4f})'
                     .format(i, len(val_loader), batch_time=batch_time,
                             loss=losses, err=error_ratio))
+            metrics.update(utils.compute_errors(output, target))
 
         print(' * Average Error Ratio {err.avg:.3f}; Average Loss {loss.avg:.3f}'
             .format(err=error_ratio, loss=losses))
-        metrics.update(utils.compute_errors(output, target))
+        
 
     # return error_ratio.avg
-    return metrics, val_si, error_ratio.avg
+    return metrics.get_value(), val_si, error_ratio.avg
 
     
 if __name__ == '__main__':
@@ -409,7 +385,7 @@ if __name__ == '__main__':
     parser.add_argument("--workers", default=11, type=int, help="Number of workers for data loading")
     parser.add_argument("--tags", default="tuning dataset splition", type=str, help="Wandb tags.")
     parser.add_argument("--notes", default='', type=str, help="Wandb notes")
-
+    parser.add_argument('--validate-every', '--validate_every', default=100, type=int, help='validation period')
 
     best_er1 = 0
 

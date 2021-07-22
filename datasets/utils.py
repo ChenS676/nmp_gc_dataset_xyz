@@ -296,37 +296,54 @@ class RunningAverage:
 
 def compute_errors(pred, target):
     # linear version
-    thresh = np.maximum((target / pred), (pred / target))
-    a1 = (thresh < 0.25).mean()
-    a2 = (thresh < 0.25 ** 2).mean()
-    a3 = (thresh < 0.25 ** 3).mean()
-    abs_rel = np.mean(np.abs(target - pred) / target)
-    sq_rel = np.mean(((target - pred) ** 2) / target)
+    # can't convert cuda:0 device type tensor to numpy. Use Tensor.cpu() to copy the tensor to host memory first.
+    # torch.mean(torch.abs(output - target) / torch.abs(target))
+    thresh = torch.maximum(torch.divide(target, pred), torch.divide(pred, target))
+    a1 = torch.mul((thresh < 0.25), thresh).mean()
+    a2 = (torch.mul((thresh < 0.25), thresh)** 2).mean()
+    a3 = (torch.mul((thresh < 0.25), thresh)** 3).mean()
+    abs_rel = torch.mean(torch.divide(torch.abs(target - pred) ,target))
+    sq_rel = torch.mean(((target - pred) ** 2) / target)
 
     rmse = (target - pred) ** 2
-    rmse = np.sqrt(rmse.mean())
+    rmse = torch.sqrt(rmse.mean())
 
     # log version
-    thresh_log = np.maximum(np.exp(np.log(target)- np.log(pred)), np.exp(np.log(pred) - np.log(gt)))
-    a1_stable = (thresh_log < 1.25).mean()
-    a2_stable = (thresh_log < 1.25 ** 2).mean()
-    a3_stable = (thresh_log < 1.25 ** 3).mean()
-    
-    abs_rel_stable = np.mean(np.exp(np.log(np.abs(target - pred)) - np.log(target)))
+    thresh_log = torch.maximum(torch.exp(torch.log(target)- torch.log(pred)), torch.exp(torch.log(pred) - torch.log(target)))
+    a1_stable = torch.mul((thresh_log < 0.25), thresh_log).mean() 
+    a2_stable = (torch.mul((thresh_log < 0.25), thresh_log)** 2).mean()
+    a3_stable = (torch.mul((thresh_log < 0.25), thresh_log)** 2).mean()
+    abs_rel_stable = torch.mean(torch.exp(torch.log(torch.abs(target - pred)) - torch.log(target)))
      
-    rmse_log = (np.log(target) - np.log(pred)) ** 2
-    rmse_log = np.sqrt(rmse_log.mean())
+    rmse_log = (torch.log(target) - torch.log(pred)) ** 2
+    rmse_log = torch.sqrt(rmse_log.mean())
 
-    err = np.log(pred) - np.log(target)
-    silog = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2) * 100
+    err = torch.log(pred) - torch.log(target)
+    silog = torch.sqrt(torch.mean(err ** 2) - torch.mean(err) ** 2) * 100
 
-    log_10 = (np.abs(np.log10(gt) - np.log10(pred))).mean()
+    log_10 = (torch.abs(torch.log10(target) - torch.log10(pred))).mean()
     
     
-    gt_ori = (target - target.min())/(target.max()-target.min())
-    pred_ori = (pred - pred.min())/(pred.max()-pred.min())
+    gt_ori = torch.divide(target - torch.min(target), torch.max(target)-torch.min(target))
+    pred_ori = torch.divide(pred - torch.min(pred), torch.max(pred)- torch.min(pred))
 
-    ssim_value = ssim(gt_ori, pred_ori, data_range=1, gaussian_weights=True, sigma=1.5, use_sample_covariance=False)
+    return dict(a1=a1, a2=a2, a3=a3, abs_rel=abs_rel, rmse=rmse, log_10=log_10, rmse_log=rmse_log, silog=silog, sq_rel=sq_rel, a1_stable = a1_stable, a2_stable=a2_stable, a3_stable=a3_stable, abs_rel_stable=abs_rel_stable)
 
-    return dict(a1=a1, a2=a2, a3=a3, abs_rel=abs_rel, rmse=rmse, log_10=log_10, rmse_log=rmse_log, silog=silog, sq_rel=sq_rel, a1_stable = a1_stable, a2_stable=a2_stable, a3_stable=a3_stable, abs_rel_stable=abs_rel_stable, ssim=ssim_value)
+def is_rank_zero(args):
+    return args.rank == 0
 
+def log_images(params):
+    raise NotImplementedError
+    wandb.log(
+        {
+            "Input": [wandb.Image(img)],
+            "GT": [wandb.Image(depth)],
+            "Prediction": [wandb.Image(pred)]
+        }, step=step)
+
+# Parser check
+def restricted_float(x, inter):
+    x = float(x)
+    if x < inter[0] or x > inter[1]:
+        raise argparse.ArgumentTypeError("%r not in range [1e-5, 1e-4]"%(x,))
+    return x

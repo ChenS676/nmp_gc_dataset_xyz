@@ -3,10 +3,11 @@
 
 import numpy as np
 import os
+import torch.nn as nn
 from tensorboard_logger import configure, log_value
 
-__author__ = "Pau Riba, Anjan Dutta"
-__email__ = "priba@cvc.uab.cat, adutta@cvc.uab.cat"
+__author__ = "chen shao"
+__email__ = "chen.shao@student.kit.edu"
 
 
 def error_ratio(pred, target):
@@ -14,7 +15,6 @@ def error_ratio(pred, target):
         pred = np.array(pred)
     if type(target) is not np.ndarray:
         target = np.array(target)       
-        
     return np.mean(np.divide(np.abs(pred - target), np.abs(target)))
 
 
@@ -34,7 +34,7 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-
+        return self.avg
 
 class Logger(object):
     def __init__(self, log_dir):
