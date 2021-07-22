@@ -253,7 +253,7 @@ def add_supernode(g):
     g.remove_edge(*(supernode_index, supernode_index))
     return g
 
-def save_checkpoint(model, optimizer, epoch, filename, root="./checkpoints"):
+def save_wandb_checkpoint(model, optimizer, epoch, filename, root="./checkpoints"):
     if not os.path.isdir(root):
         os.makedirs(root)
 
@@ -312,7 +312,7 @@ def compute_errors(pred, target):
     thresh_log = torch.maximum(torch.exp(torch.log(target)- torch.log(pred)), torch.exp(torch.log(pred) - torch.log(target)))
     a1_stable = torch.mul((thresh_log < 0.25), thresh_log).mean() 
     a2_stable = (torch.mul((thresh_log < 0.25), thresh_log)** 2).mean()
-    a3_stable = (torch.mul((thresh_log < 0.25), thresh_log)** 2).mean()
+    a3_stable = (torch.mul((thresh_log < 0.25), thresh_log)** 3).mean()
     abs_rel_stable = torch.mean(torch.exp(torch.log(torch.abs(target - pred)) - torch.log(target)))
      
     rmse_log = (torch.log(target) - torch.log(pred)) ** 2
@@ -321,7 +321,7 @@ def compute_errors(pred, target):
     err = torch.log(pred) - torch.log(target)
     silog = torch.sqrt(torch.mean(err ** 2) - torch.mean(err) ** 2) * 100
 
-    log_10 = (torch.abs(torch.log10(target) - torch.log10(pred))).mean()
+    log_10 = torch.mean(torch.abs(torch.log10(target) - torch.log10(pred)))
     
     
     gt_ori = torch.divide(target - torch.min(target), torch.max(target)-torch.min(target))

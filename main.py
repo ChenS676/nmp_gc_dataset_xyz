@@ -39,7 +39,7 @@ __author__ = "chen shao"
 __email__ = "chen.shao@student.kit.edu"
 
 
-os.environ['WANDB_MODE'] = 'dryrun'
+# os.environ['WANDB_MODE'] = 'dryrun'
 global PROJECT
 PROJECT = "MPNN-Displace-Reaction"
 logging = True
@@ -143,7 +143,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
 def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001, device=None, experiment_name="Hyperparameter_tuning", root="."):
     
-    global PROJECT
+    global PROJECT, best_er1
     if device is None:
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -232,7 +232,7 @@ def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001,
             scheduler.step()
 
             if i % args.log_interval == 0 and i > 0:
-                print('\tEpoch: [{0}][{1}/{2}]\t'
+                print('\nEpoch: [{0}][{1}/{2}]\t'
                     'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                     'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                     'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
@@ -253,7 +253,7 @@ def train(model, train_loader, valid_loader, args, optimizer, epochs, lr=0.0001,
 
                     # go into the wandb and file the right file to save the model
                     wandb.save(os.path.join(wandb.run.dir, "checkpoint*"))
-                    utils.save_checkpoint(model, optimizer, epoch, f"{experiment_name}_{run_id}_latest.pt",
+                    utils.save_wandb_checkpoint(model, optimizer, epoch, f"{experiment_name}_{run_id}_latest.pt",
                                              root=os.path.join(wandb.run.dir, "checkpoints"))
                 if metrics['abs_rel'] < best_loss and should_write:
                     utils.save_checkpoint(model, optimizer, epoch, f"{experiment_name}_{run_id}_best.pt",
@@ -319,7 +319,7 @@ def validate(args, model, val_loader, criterion, evaluation, epoch, epochs, devi
 
             if i % args.log_interval == 0 and i > 0:
                 
-                print('Test: [{0}/{1}]\t'
+                print('\nTest: [{0}/{1}]\t'
                     'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                     'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                     'Error Ratio {err.val:.4f} ({err.avg:.4f})'
